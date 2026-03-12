@@ -5,6 +5,7 @@ project(Client_B VERSION 0.1 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(Qt6 REQUIRED COMPONENTS Quick)
+find_package(Qt6 REQUIRED COMPONENTS Core)
 
 qt_standard_project_setup(REQUIRES 6.8)
 
@@ -16,6 +17,12 @@ qt_add_qml_module(appClient_B
     URI Client_B
     QML_FILES
         Main.qml
+        SOURCES gamescreen.h gamescreen.cpp
+        SOURCES gamestate.h gamestate.cpp
+        SOURCES player.h player.cpp
+        SOURCES gamescreenviewmodel.h gamescreenviewmodel.cpp
+        QML_FILES gamescreen.qml
+        RESOURCES dialog.ui
 )
 
 # Qt for iOS sets MACOSX_BUNDLE_GUI_IDENTIFIER automatically since Qt 6.1.
@@ -32,6 +39,7 @@ set_target_properties(appClient_B PROPERTIES
 target_link_libraries(appClient_B
     PRIVATE Qt6::Quick
 )
+target_link_libraries(appClient_B PRIVATE Qt6::Core)
 
 include(GNUInstallDirs)
 install(TARGETS appClient_B
