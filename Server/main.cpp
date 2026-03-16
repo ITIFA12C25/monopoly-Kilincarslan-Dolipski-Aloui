@@ -1,4 +1,3 @@
-// *** BEGINN KI-generiert Label: Prompt_23_Server_Property_Logic_Fix ***
 #include <QApplication>
 #include <QDialog>
 #include <QVBoxLayout>
@@ -25,8 +24,9 @@ public:
     QString name;
     double geld;
     int position;
+    int imGefaengnis; // 0 = frei, >0 = Runden gesperrt
     QTcpSocket* socket;
-    ServerSpieler(int id, QTcpSocket* s) : id(id), name("Unbekannt"), geld(1500), position(0), socket(s) {}
+    ServerSpieler(int id, QTcpSocket* s) : id(id), name("Unbekannt"), geld(1500), position(0), imGefaengnis(0), socket(s) {}
 };
 
 class Feld {
@@ -47,8 +47,8 @@ public:
 
     double getAktuelleMiete() {
         if (haeuser == 0) return basisMiete;
-        if (haeuser == 5) return basisMiete * 10;
-        return basisMiete * (haeuser + 1) * 1.5;
+        if (haeuser == 5) return basisMiete * 10; // Hotel
+        return basisMiete * (haeuser + 1) * 1.5; // Häuser
     }
 };
 
@@ -58,7 +58,6 @@ public:
     SonderFeld(int id, string n, string t) : Feld(id, n), typ(t) {}
 };
 
-// --- MODERNES IP-DIALOG FENSTER ---
 class IPDialog : public QDialog {
 public:
     IPDialog(const QStringList &ips, QWidget *parent = nullptr) : QDialog(parent) {
@@ -137,7 +136,7 @@ private:
             else if (i == 20) brett.push_back(new SonderFeld(i, "PARKEN", "FREI"));
             else if (i == 30) brett.push_back(new SonderFeld(i, "POLIZEI", "GEHE INS GEFÄNGNIS"));
             else {
-                // Einfache Preis-Berechnung für die Demo
+                // hausPreis ist immer 50$ für die Demo
                 brett.push_back(new StadtFeld(i, "Feld " + to_string(i), 100 + i*5, 10 + i, 50));
             }
         }
@@ -229,6 +228,14 @@ private:
                     return;
                 }
 
+                // GEFÄNGNIS LOGIK
+                if (sender->imGefaengnis > 0) {
+                    sender->imGefaengnis--;
+                    broadcast("MSG:⛓️ " + sender->name + " sitzt im Gefängnis und muss aussetzen. (Noch " + QString::number(sender->imGefaengnis) + " Runden)");
+                    naechsterSpieler();
+                    return; // Beendet den Zug ohne zu würfeln
+                }
+
                 int a = (rand()%6+1) + (rand()%6+1);
                 broadcast("MSG:" + sender->name + " wuerfelt " + QString::number(a));
 
@@ -242,29 +249,35 @@ private:
 
                 broadcast("UPDATE_POS:" + QString::number(sender->id) + ":" + QString::number(sender->position));
 
-                // --- FELD LOGIK ---
-                StadtFeld* stadt = dynamic_cast<StadtFeld*>(brett[sender->position]);
-                if(stadt) {
-                    if(stadt->besitzerID == -1) {
-                        // Feld ist frei -> Frage den Spieler, ob er kaufen will
-                        sendeAnSpieler(sender->id, "ASK_BUY:" + QString::number(stadt->id) + ":" + QString::number(stadt->preis));
-                        // Wichtig: Wir wechseln den Spieler erst, wenn er geantwortet hat (BUY/NOBUY)
-                    } else if(stadt->besitzerID != sender->id) {
-                        // Miete zahlen
-                        double miete = stadt->getAktuelleMiete();
-                        sender->geld -= miete;
-                        spieler[stadt->besitzerID]->geld += miete;
-
-                        broadcast("MSG:" + sender->name + " zahlt " + QString::number(miete) + "$ Miete.");
-                        broadcast("UPDATE_MONEY:" + QString::number(sender->id) + ":" + QString::number(sender->geld));
-                        broadcast("UPDATE_MONEY:" + QString::number(stadt->besitzerID) + ":" + QString::number(spieler[stadt->besitzerID]->geld));
-
-                        naechsterSpieler();
-                    } else {
-                        naechsterSpieler(); // Eigenes Feld
-                    }
+                // POLIZEI LOGIK (Feld 30)
+                if (sender->position == 30) {
+                    broadcast("MSG:🚨 " + sender->name + " wurde von der Polizei erwischt und geht ins Gefängnis!");
+                    sender->position = 10;
+                    sender->imGefaengnis = 2; // 2 Runden aussetzen
+                    broadcast("UPDATE_POS:" + QString::number(sender->id) + ":10");
+                    naechsterSpieler();
                 } else {
-                    naechsterSpieler(); // Sonderfeld (LOS, GEFÄNGNIS etc.)
+                    // NORMALE FELD LOGIK
+                    StadtFeld* stadt = dynamic_cast<StadtFeld*>(brett[sender->position]);
+                    if(stadt) {
+                        if(stadt->besitzerID == -1) {
+                            sendeAnSpieler(sender->id, "ASK_BUY:" + QString::number(stadt->id) + ":" + QString::number(stadt->preis));
+                        } else if(stadt->besitzerID != sender->id) {
+                            double miete = stadt->getAktuelleMiete();
+                            sender->geld -= miete;
+                            spieler[stadt->besitzerID]->geld += miete;
+
+                            broadcast("MSG:" + sender->name + " zahlt " + QString::number(miete) + "$ Miete.");
+                            broadcast("UPDATE_MONEY:" + QString::number(sender->id) + ":" + QString::number(sender->geld));
+                            broadcast("UPDATE_MONEY:" + QString::number(stadt->besitzerID) + ":" + QString::number(spieler[stadt->besitzerID]->geld));
+
+                            naechsterSpieler();
+                        } else {
+                            naechsterSpieler();
+                        }
+                    } else {
+                        naechsterSpieler();
+                    }
                 }
             } else if(cmd == "CMD_BUY") {
                 int feldId = parts[1].toInt();
@@ -280,6 +293,21 @@ private:
                 naechsterSpieler();
             } else if(cmd == "CMD_NOBUY") {
                 naechsterSpieler();
+            } else if(cmd == "CMD_BUILD") {
+                // HAUSBAU LOGIK
+                int feldId = parts[1].toInt();
+                StadtFeld* stadt = dynamic_cast<StadtFeld*>(brett[feldId]);
+
+                if(stadt && stadt->besitzerID == sender->id && stadt->haeuser < 5 && sender->geld >= stadt->hausPreis) {
+                    sender->geld -= stadt->hausPreis;
+                    stadt->haeuser++;
+
+                    broadcast("UPDATE_MONEY:" + QString::number(sender->id) + ":" + QString::number(sender->geld));
+                    broadcast("UPDATE_HOUSES:" + QString::number(feldId) + ":" + QString::number(stadt->haeuser));
+
+                    QString gebaeude = (stadt->haeuser == 5) ? "ein Hotel 🏨" : "ein Haus 🏠";
+                    broadcast("MSG:" + sender->name + " baut " + gebaeude + " auf " + QString::fromStdString(stadt->name) + ".");
+                }
             }
         }
     }
@@ -290,4 +318,3 @@ int main(int argc, char *argv[]) {
     MonopolyServer server;
     return a.exec();
 }
-// *** ENDE KI-generiert Label: Prompt_23_Server_Property_Logic_Fix ***

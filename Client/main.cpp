@@ -1,4 +1,3 @@
-// *** BEGINN KI-generiert Label: Prompt_09_Client_Main ***
 #include "mainwindow.h"
 #include "startscreen.h"
 #include <QApplication>
@@ -22,4 +21,3 @@ int main(int argc, char *argv[])
 
     return a.exec();
 }
-// *** ENDE KI-generiert Label: Prompt_09_Client_Main ***

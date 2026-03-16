@@ -1,4 +1,3 @@
-// *** BEGINN KI-generiert Label: Prompt_09_Client_Start_CPP ***
 #include "startscreen.h"
 #include <QVBoxLayout>
 #include <QLabel>
@@ -34,4 +33,3 @@ StartScreen::StartScreen(QWidget *parent) : QWidget(parent) {
         emit joinGameClicked(ipInput->text(), guestNameInput->text());
     });
 }
-// *** ENDE KI-generiert Label: Prompt_09_Client_Start_CPP ***

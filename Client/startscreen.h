@@ -1,4 +1,3 @@
-// *** BEGINN KI-generiert Label: Prompt_09_Client_Start_H ***
 #ifndef STARTSCREEN_H
 #define STARTSCREEN_H
 
@@ -21,4 +20,3 @@ private:
 };
 
 #endif
-// *** ENDE KI-generiert Label: Prompt_09_Client_Start_H ***
