@@ -1,33 +1,293 @@
-#include "mainwindow.h"
-#include "startscreen.h"
+// *** BEGINN KI-generiert Label: Prompt_23_Server_Property_Logic_Fix ***
 #include <QApplication>
+#include <QDialog>
+#include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QLabel>
+#include <QPushButton>
+#include <QLineEdit>
+#include <QClipboard>
+#include <QTcpServer>
+#include <QTcpSocket>
+#include <QNetworkInterface>
+#include <QDebug>
+#include <QScrollArea>
+#include <QTextStream>
+#include <vector>
+#include <string>
 
-int main(int argc, char *argv[])
-{
+using namespace std;
+
+// --- DATENMODELLE ---
+class ServerSpieler {
+public:
+    int id;
+    QString name;
+    double geld;
+    int position;
+    QTcpSocket* socket;
+    ServerSpieler(int id, QTcpSocket* s) : id(id), name("Unbekannt"), geld(1500), position(0), socket(s) {}
+};
+
+class Feld {
+public:
+    int id;
+    string name;
+    virtual ~Feld() {}
+    Feld(int id, string n) : id(id), name(n) {}
+};
+
+class StadtFeld : public Feld {
+public:
+    double preis, basisMiete, hausPreis;
+    int haeuser, besitzerID;
+
+    StadtFeld(int id, string n, double p, double m, double hp)
+        : Feld(id, n), preis(p), basisMiete(m), hausPreis(hp), haeuser(0), besitzerID(-1) {}
+
+    double getAktuelleMiete() {
+        if (haeuser == 0) return basisMiete;
+        if (haeuser == 5) return basisMiete * 10;
+        return basisMiete * (haeuser + 1) * 1.5;
+    }
+};
+
+class SonderFeld : public Feld {
+public:
+    string typ;
+    SonderFeld(int id, string n, string t) : Feld(id, n), typ(t) {}
+};
+
+// --- MODERNES IP-DIALOG FENSTER ---
+class IPDialog : public QDialog {
+public:
+    IPDialog(const QStringList &ips, QWidget *parent = nullptr) : QDialog(parent) {
+        setWindowTitle("Monopoly Server Konfiguration");
+        setMinimumWidth(400);
+        setStyleSheet(
+            "QDialog { background-color: #1e1e1e; color: white; }"
+            "QLabel#title { color: #2ecc71; font-size: 20px; font-weight: bold; margin-bottom: 10px; }"
+            "QLabel#subtitle { color: #bdc3c7; font-size: 12px; margin-bottom: 20px; }"
+            "QFrame#ipCard { background-color: #2c3e50; border-radius: 8px; padding: 10px; }"
+            "QLineEdit { background: #34495e; border: none; color: #ecf0f1; padding: 8px; border-radius: 4px; font-family: 'Courier New'; }"
+            "QPushButton { background-color: #27ae60; color: white; border-radius: 4px; padding: 8px 15px; font-weight: bold; }"
+            "QPushButton:hover { background-color: #2ecc71; }"
+            "QPushButton#btnClose { background-color: #c0392b; margin-top: 20px; }"
+            );
+
+        QVBoxLayout *layout = new QVBoxLayout(this);
+        layout->setContentsMargins(30, 30, 30, 30);
+
+        QLabel *title = new QLabel("Monopoly Server");
+        title->setObjectName("title");
+        layout->addWidget(title);
+
+        QLabel *subtitle = new QLabel("Wähle eine IP aus und kopiere sie für deine Mitspieler:");
+        subtitle->setObjectName("subtitle");
+        subtitle->setWordWrap(true);
+        layout->addWidget(subtitle);
+
+        QScrollArea *scroll = new QScrollArea();
+        scroll->setWidgetResizable(true);
+        scroll->setStyleSheet("QScrollArea { border: none; background: transparent; }");
+        QWidget *scrollWidget = new QWidget();
+        QVBoxLayout *scrollLayout = new QVBoxLayout(scrollWidget);
+        scrollLayout->setSpacing(10);
+
+        for (const QString &ip : ips) {
+            QFrame *card = new QFrame();
+            card->setObjectName("ipCard");
+            QHBoxLayout *cardLayout = new QHBoxLayout(card);
+
+            QLineEdit *edit = new QLineEdit(ip);
+            edit->setReadOnly(true);
+
+            QPushButton *btnCopy = new QPushButton("Kopieren");
+            connect(btnCopy, &QPushButton::clicked, this, [ip]() {
+                QApplication::clipboard()->setText(ip);
+            });
+
+            cardLayout->addWidget(edit);
+            cardLayout->addWidget(btnCopy);
+            scrollLayout->addWidget(card);
+        }
+
+        scroll->setWidget(scrollWidget);
+        layout->addWidget(scroll);
+
+        QPushButton *btnClose = new QPushButton("Server im Hintergrund laufen lassen");
+        btnClose->setObjectName("btnClose");
+        connect(btnClose, &QPushButton::clicked, this, &QDialog::accept);
+        layout->addWidget(btnClose);
+    }
+};
+
+// --- SERVER LOGIK ---
+class MonopolyServer : public QObject {
+private:
+    QTcpServer* server;
+    vector<ServerSpieler*> spieler;
+    vector<Feld*> brett;
+    int aktuellerSpielerIndex = 0;
+
+    void setupBrett() {
+        for(int i=0; i<40; i++) {
+            if (i == 0) brett.push_back(new SonderFeld(i, "LOS", "START"));
+            else if (i == 10) brett.push_back(new SonderFeld(i, "GEFÄNGNIS", "BESUCH"));
+            else if (i == 20) brett.push_back(new SonderFeld(i, "PARKEN", "FREI"));
+            else if (i == 30) brett.push_back(new SonderFeld(i, "POLIZEI", "GEHE INS GEFÄNGNIS"));
+            else {
+                // Einfache Preis-Berechnung für die Demo
+                brett.push_back(new StadtFeld(i, "Feld " + to_string(i), 100 + i*5, 10 + i, 50));
+            }
+        }
+    }
+
+    void broadcast(QString msg) {
+        for(auto s : spieler) {
+            if(s->socket && s->socket->isOpen()) {
+                QTextStream out(s->socket);
+                out << msg << "\n";
+                out.flush();
+            }
+        }
+    }
+
+    void sendeAnSpieler(int id, QString msg) {
+        if(id >= 0 && id < (int)spieler.size() && spieler[id]->socket) {
+            QTextStream out(spieler[id]->socket);
+            out << msg << "\n";
+            out.flush();
+        }
+    }
+
+    void syncAlle() {
+        for(auto s : spieler) {
+            if (s->name != "Unbekannt") {
+                broadcast("PLAYER_UPDATE:" + QString::number(s->id) + ":" + s->name + ":" + QString::number(s->geld));
+                broadcast("UPDATE_POS:" + QString::number(s->id) + ":" + QString::number(s->position));
+            }
+        }
+        if (!spieler.empty()) {
+            broadcast("MSG:--- " + spieler[aktuellerSpielerIndex]->name + " ist am Zug ---");
+        }
+    }
+
+    void naechsterSpieler() {
+        if (spieler.empty()) return;
+        aktuellerSpielerIndex = (aktuellerSpielerIndex + 1) % (int)spieler.size();
+        broadcast("MSG:--- " + spieler[aktuellerSpielerIndex]->name + " ist am Zug ---");
+    }
+
+public:
+    MonopolyServer(QObject *parent = nullptr) : QObject(parent) {
+        srand(time(0));
+        setupBrett();
+        server = new QTcpServer(this);
+        connect(server, &QTcpServer::newConnection, this, &MonopolyServer::neueVerbindung);
+
+        if(server->listen(QHostAddress::Any, 1234)) {
+            QStringList foundIps;
+            for (const QHostAddress &address: QNetworkInterface::allAddresses()) {
+                if (address.protocol() == QAbstractSocket::IPv4Protocol && address != QHostAddress::LocalHost) {
+                    foundIps << address.toString();
+                }
+            }
+            IPDialog dialog(foundIps);
+            dialog.exec();
+            qDebug() << "Server aktiv auf Port 1234...";
+        }
+    }
+
+private:
+    void neueVerbindung() {
+        QTcpSocket* clientSocket = server->nextPendingConnection();
+        int newId = spieler.size();
+        ServerSpieler* neuerSpieler = new ServerSpieler(newId, clientSocket);
+        spieler.push_back(neuerSpieler);
+
+        connect(clientSocket, &QTcpSocket::readyRead, this, [this, neuerSpieler]() { datenEmpfangen(neuerSpieler); });
+        sendeAnSpieler(newId, "ASSIGN_ID:" + QString::number(newId));
+        qDebug() << "Neuer Spieler verbunden: ID" << newId;
+    }
+
+    void datenEmpfangen(ServerSpieler* sender) {
+        QByteArray data = sender->socket->readAll();
+        QStringList lines = QString(data).split("\n", Qt::SkipEmptyParts);
+
+        for(QString msg : lines) {
+            QStringList parts = msg.split(":");
+            QString cmd = parts[0];
+
+            if(cmd == "NAME") {
+                sender->name = parts[1];
+                broadcast("MSG:" + sender->name + " ist beigetreten.");
+                syncAlle();
+            } else if(cmd == "CMD_ROLL") {
+                if(sender->id != aktuellerSpielerIndex) {
+                    sendeAnSpieler(sender->id, "MSG:Du bist nicht dran!");
+                    return;
+                }
+
+                int a = (rand()%6+1) + (rand()%6+1);
+                broadcast("MSG:" + sender->name + " wuerfelt " + QString::number(a));
+
+                int altePos = sender->position;
+                sender->position = (sender->position + a) % 40;
+
+                if (sender->position < altePos) {
+                    sender->geld += 200;
+                    broadcast("UPDATE_MONEY:" + QString::number(sender->id) + ":" + QString::number(sender->geld));
+                }
+
+                broadcast("UPDATE_POS:" + QString::number(sender->id) + ":" + QString::number(sender->position));
+
+                // --- FELD LOGIK ---
+                StadtFeld* stadt = dynamic_cast<StadtFeld*>(brett[sender->position]);
+                if(stadt) {
+                    if(stadt->besitzerID == -1) {
+                        // Feld ist frei -> Frage den Spieler, ob er kaufen will
+                        sendeAnSpieler(sender->id, "ASK_BUY:" + QString::number(stadt->id) + ":" + QString::number(stadt->preis));
+                        // Wichtig: Wir wechseln den Spieler erst, wenn er geantwortet hat (BUY/NOBUY)
+                    } else if(stadt->besitzerID != sender->id) {
+                        // Miete zahlen
+                        double miete = stadt->getAktuelleMiete();
+                        sender->geld -= miete;
+                        spieler[stadt->besitzerID]->geld += miete;
+
+                        broadcast("MSG:" + sender->name + " zahlt " + QString::number(miete) + "$ Miete.");
+                        broadcast("UPDATE_MONEY:" + QString::number(sender->id) + ":" + QString::number(sender->geld));
+                        broadcast("UPDATE_MONEY:" + QString::number(stadt->besitzerID) + ":" + QString::number(spieler[stadt->besitzerID]->geld));
+
+                        naechsterSpieler();
+                    } else {
+                        naechsterSpieler(); // Eigenes Feld
+                    }
+                } else {
+                    naechsterSpieler(); // Sonderfeld (LOS, GEFÄNGNIS etc.)
+                }
+            } else if(cmd == "CMD_BUY") {
+                int feldId = parts[1].toInt();
+                StadtFeld* stadt = dynamic_cast<StadtFeld*>(brett[feldId]);
+                if(stadt && stadt->besitzerID == -1 && sender->geld >= stadt->preis) {
+                    sender->geld -= stadt->preis;
+                    stadt->besitzerID = sender->id;
+
+                    broadcast("UPDATE_MONEY:" + QString::number(sender->id) + ":" + QString::number(sender->geld));
+                    broadcast("UPDATE_OWNER:" + QString::number(feldId) + ":" + QString::number(sender->id));
+                    broadcast("MSG:" + sender->name + " hat das Feld gekauft.");
+                }
+                naechsterSpieler();
+            } else if(cmd == "CMD_NOBUY") {
+                naechsterSpieler();
+            }
+        }
+    }
+};
+
+int main(int argc, char *argv[]) {
     QApplication a(argc, argv);
-
-    // 1. Start Screen anzeigen
-    StartScreen s;
-    s.show();
-
-    // Variable für das Hauptfenster (Pointer, damit es existiert wenn Lambda fertig ist)
-    MainWindow *w = nullptr;
-
-    // 2. Verbindung: Wenn "Host" geklickt wird
-    QObject::connect(&s, &StartScreen::hostGameClicked, [&](QString name){
-        s.close();
-        // Starte als Host (true), IP ist leer
-        w = new MainWindow(true, name, "");
-        w->show();
-    });
-
-    // 3. Verbindung: Wenn "Join" geklickt wird
-    QObject::connect(&s, &StartScreen::joinGameClicked, [&](QString ip, QString name){
-        s.close();
-        // Starte als Gast (false), IP wird übergeben
-        w = new MainWindow(false, name, ip);
-        w->show();
-    });
-
+    MonopolyServer server;
     return a.exec();
 }
+// *** ENDE KI-generiert Label: Prompt_23_Server_Property_Logic_Fix ***
