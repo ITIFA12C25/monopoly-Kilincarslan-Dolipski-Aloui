@@ -23,6 +23,7 @@ qt_add_qml_module(appClient_B
         SOURCES gamescreenviewmodel.h gamescreenviewmodel.cpp
         QML_FILES gamescreen.qml
         RESOURCES dialog.ui
+        QML_FILES
 )
 
 # Qt for iOS sets MACOSX_BUNDLE_GUI_IDENTIFIER automatically since Qt 6.1.

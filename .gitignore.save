@@ -1,0 +1,19 @@
+# Qt Creator / C++ Build Verzeichnisse
+build-*/
+*.user
+*.o
+*.obj
+*.moc
+*.app/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Betriebssystem-spezifische Dateien
+.DS_Store
+Thumbs.db
+
+# Monopoly CSV Logs (Dateien, die während des Spiels erstellt werden)
+*.csv
+
