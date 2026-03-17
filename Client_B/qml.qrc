@@ -1,0 +1,16 @@
+<RCC>
+    <qresource prefix="/qt/qml/Client_B">
+        <file>Main.qml</file>
+        <file>StartScreen.qml</file>
+        <file>LobbyScreen.qml</file>
+        <file>GameScreen.qml</file>
+        <file>PlayerHeader.qml</file>
+        <file>GameBoard.qml</file>
+        <file>PlayerList.qml</file>
+        <file>DiceButton.qml</file>
+        <file>BuyPopup.qml</file>
+        <file>BuildPopup.qml</file>
+        <file>FieldInfoPopup.qml</file>
+        <file>GameOverPopup.qml</file>
+    </qresource>
+</RCC>
