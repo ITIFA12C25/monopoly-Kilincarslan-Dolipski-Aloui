@@ -1,4 +1,3 @@
-// *** BEGINN KI-generiert Label: Prompt_25_Client_UI_Fix ***
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
@@ -66,4 +65,3 @@ private:
 };
 
 #endif
-// *** ENDE KI-generiert Label: Prompt_25_Client_UI_Fix ***

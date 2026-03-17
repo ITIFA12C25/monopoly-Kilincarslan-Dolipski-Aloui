@@ -1,4 +1,3 @@
-// *** BEGINN KI-generiert Label: Prompt_27_Client_NoIcon_Ultimate_Fix ***
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 #include <QMessageBox>
@@ -11,7 +10,6 @@
 #include <functional>
 #include <QIcon>
 
-// Hilfsklasse für klickbare Felder
 class ClickableFrame : public QFrame {
 public:
     std::function<void()> onClick;
@@ -38,7 +36,6 @@ MainWindow::MainWindow(QString playerName, QString targetIp, QWidget *parent)
         qobject_cast<QVBoxLayout*>(ui->controlsContainer->layout())->insertWidget(1, statsLabel);
     }
 
-    // Würfeln erst erlauben, wenn Mitspieler da sind
     ui->btnWuerfeln->setEnabled(false);
 
     socket = new QTcpSocket(this);
@@ -50,10 +47,9 @@ MainWindow::MainWindow(QString playerName, QString targetIp, QWidget *parent)
         QTextStream out(socket);
         out << "NAME:" << meinName << "\n";
     } else {
-        // Fehler-Popup ohne Icon und ohne Fenster-Icon
         QMessageBox msg(this);
         msg.setWindowTitle("Fehler");
-        msg.setWindowIcon(QIcon()); // Entfernt das App-Icon aus der Titelleiste
+        msg.setWindowIcon(QIcon());
         msg.setIcon(QMessageBox::NoIcon);
         msg.setText("Server nicht erreichbar!");
         msg.exec();
@@ -63,12 +59,18 @@ MainWindow::MainWindow(QString playerName, QString targetIp, QWidget *parent)
 MainWindow::~MainWindow() { delete ui; }
 
 QString MainWindow::getFeldName(int id) {
-    if(id==0) return "LOS"; if(id==10) return "GEFÄNGNIS"; if(id==20) return "PARKEN"; if(id==30) return "POLIZEI";
-    if(id==5) return "Südbahnhof"; if(id==15) return "Westbahnhof"; if(id==25) return "Nordbahnhof"; if(id==35) return "Ostbahnhof";
-    if(id==12) return "E-Werk"; if(id==28) return "Wasserwerk";
-    if(id==1) return "Oldenburg"; if(id==2) return "Osnabrück"; if(id==3) return "Lübeck"; if(id==4) return "Kiel";
-    if(id==37) return "Düsseldorf"; if(id==39) return "Berlin";
-    return "Strasse " + QString::number(id);
+    QString names[40] = {
+        "LOS", "Flensburg", "Kiel", "Lübeck", "Rostock",
+        "Südbahnhof", "Bremen", "Hannover", "Wolfsburg", "Osnabrück",
+        "GEFÄNGNIS", "Dortmund", "E-Werk", "Bochum", "Essen",
+        "Westbahnhof", "Düsseldorf", "Köln", "Bonn", "Aachen",
+        "PARKEN", "Frankfurt", "Wiesbaden", "Mainz", "Darmstadt",
+        "Nordbahnhof", "Mannheim", "Karlsruhe", "Wasserwerk", "Freiburg",
+        "POLIZEI", "Stuttgart", "Ulm", "Augsburg", "München",
+        "Hauptbahnhof", "Nürnberg", "Regensburg", "Leipzig", "Berlin"
+    };
+    if(id >= 0 && id < 40) return names[id];
+    return "Unbekannt";
 }
 
 int MainWindow::getFeldPreis(int i) {
@@ -107,19 +109,36 @@ void MainWindow::setupBrettUI() {
         auto clickAction = [this, i]() {
             if(i < 0 || i >= (int)brettUI.size()) return;
 
-            // Info-Popup ohne Icon und ohne Fenster-Icon
             QMessageBox msg(this);
-            msg.setWindowIcon(QIcon()); // Entfernt das App-Icon
-            msg.setWindowTitle("Feld Info");
+            msg.setWindowIcon(QIcon());
             msg.setIcon(QMessageBox::NoIcon);
-            QString info = "<b>" + brettUI[i].name + "</b>";
-            if(brettUI[i].preis > 0) {
-                info += "<br><br>Kaufpreis: " + QString::number(brettUI[i].preis) + "$";
-                QString besitzer = (brettUI[i].besitzerID == -1) ? "Bank" : spielerUI[brettUI[i].besitzerID].name;
-                info += "<br><br>Besitzer: " + besitzer;
+            msg.setWindowFlags(msg.windowFlags() | Qt::CustomizeWindowHint | Qt::WindowTitleHint);
+
+            // GEHÖRT DAS FELD MIR? -> BAUEN ABFRAGE
+            if (brettUI[i].besitzerID == meineID && brettUI[i].haeuser < 5 && brettUI[i].preis > 0) {
+                msg.setWindowTitle("Bauen");
+                QString text = (brettUI[i].haeuser == 4) ? "Hotel bauen?" : "Haus bauen?";
+                msg.setText("Möchtest du ein " + text);
+                msg.setInformativeText("Kosten: 50 $\nAktuelle Häuser: " + QString::number(brettUI[i].haeuser));
+                msg.setStandardButtons(QMessageBox::Yes | QMessageBox::No);
+                msg.setDefaultButton(QMessageBox::Yes);
+
+                if(msg.exec() == QMessageBox::Yes) {
+                    QTextStream(socket) << "CMD_BUILD:" << i << "\n";
+                }
+            } else {
+                // NORMALES INFO FENSTER
+                msg.setWindowTitle("Feld Info");
+                QString info = "<b>" + brettUI[i].name + "</b>";
+                if(brettUI[i].preis > 0) {
+                    info += "<br><br>Kaufpreis: " + QString::number(brettUI[i].preis) + "$";
+                    QString besitzer = (brettUI[i].besitzerID == -1) ? "Bank" : spielerUI[brettUI[i].besitzerID].name;
+                    info += "<br><br>Besitzer: " + besitzer;
+                    info += "<br>Häuser: " + QString::number(brettUI[i].haeuser);
+                }
+                msg.setText(info);
+                msg.exec();
             }
-            msg.setText(info);
-            msg.exec();
         };
 
         ClickableFrame* frame = new ClickableFrame(this, clickAction);
@@ -143,16 +162,23 @@ void MainWindow::setupBrettUI() {
         lPreis->setAlignment(Qt::AlignCenter);
         lPreis->setStyleSheet("font-size: 6px; background: transparent;");
 
+        // HÄUSER LABEL
+        QLabel* lHaus = new QLabel("");
+        lHaus->setAlignment(Qt::AlignCenter);
+        lHaus->setStyleSheet("font-size: 8px; background: transparent;");
+
         QLabel* lSpieler = new QLabel("");
         lSpieler->setAlignment(Qt::AlignCenter);
 
         vLayout->addWidget(lColorBar);
         vLayout->addWidget(lName);
         vLayout->addWidget(lPreis);
+        vLayout->addWidget(lHaus);
         vLayout->addWidget(lSpieler);
 
         feldFrames.push_back(frame);
         preisLabels.push_back(lPreis);
+        hausLabels.push_back(lHaus);
         spielerLabels.push_back(lSpieler);
         grid->addWidget(frame, r, c);
     }
@@ -172,6 +198,17 @@ void MainWindow::updateBrettUI() {
         if(brettUI[i].besitzerID != -1) preisLabels[i]->setText("");
         feldFrames[i]->setStyleSheet(style);
         spielerLabels[i]->setText("");
+
+        // HÄUSER ANZEIGEN
+        if (brettUI[i].haeuser == 0) {
+            hausLabels[i]->setText("");
+        } else if (brettUI[i].haeuser == 5) {
+            hausLabels[i]->setText("🏨");
+        } else {
+            QString h = "";
+            for(int k=0; k<brettUI[i].haeuser; k++) h += "🏠";
+            hausLabels[i]->setText(h);
+        }
     }
 
     for(size_t i=0; i<spielerUI.size(); i++) {
@@ -194,7 +231,7 @@ void MainWindow::on_btnWuerfeln_clicked() {
     if (spielerUI.size() < 2) {
         QMessageBox msg(this);
         msg.setWindowTitle("Warten");
-        msg.setWindowIcon(QIcon()); // Icon entfernen
+        msg.setWindowIcon(QIcon());
         msg.setIcon(QMessageBox::NoIcon);
         msg.setText("Warte, bis der zweite Spieler beigetreten ist!");
         msg.exec();
@@ -214,6 +251,7 @@ void MainWindow::datenEmpfangen() {
         QString cmd = parts[0];
 
         if(cmd == "MSG") log(parts[1]);
+        else if(cmd == "ASSIGN_ID") meineID = parts[1].toInt(); // WICHTIG: Speichert die ID des Clients
         else if(cmd == "PLAYER_UPDATE") {
             int id = parts[1].toInt();
             if(id >= (int)spielerUI.size()) spielerUI.resize(id + 1);
@@ -234,14 +272,26 @@ void MainWindow::datenEmpfangen() {
             brettUI[parts[1].toInt()].besitzerID = parts[2].toInt();
             updateBrettUI();
         }
-        else if(cmd == "ASK_BUY") {
-            // Kauf-Popup OHNE ICON (absolut ohne Symbole)
+        else if(cmd == "UPDATE_HOUSES") {
+            int feldId = parts[1].toInt();
+            brettUI[feldId].haeuser = parts[2].toInt();
+            updateBrettUI();
+        }
+        else if(cmd == "GAME_OVER") {
+            // Spiel vorbei -> Button deaktivieren und Pop-up anzeigen
+            ui->btnWuerfeln->setEnabled(false);
             QMessageBox msgBox(this);
-            msgBox.setWindowIcon(QIcon()); // Entfernt das "Ordner"-Icon (App-Symbol) aus der Titelleiste
+            msgBox.setWindowIcon(QIcon());
+            msgBox.setIcon(QMessageBox::NoIcon);
+            msgBox.setWindowTitle("Spielende");
+            msgBox.setText("Das Spiel ist vorbei! Ein Spieler ist bankrott gegangen.");
+            msgBox.exec();
+        }
+        else if(cmd == "ASK_BUY") {
+            QMessageBox msgBox(this);
+            msgBox.setWindowIcon(QIcon());
             msgBox.setWindowTitle("Kaufentscheidung");
-            msgBox.setIcon(QMessageBox::NoIcon); // Entfernt das Warn/Info-Bild im Inhalt
-
-            // Verhindert, dass macOS den Standard-Icon-Slot wieder befüllt
+            msgBox.setIcon(QMessageBox::NoIcon);
             msgBox.setWindowFlags(msgBox.windowFlags() | Qt::CustomizeWindowHint | Qt::WindowTitleHint);
 
             msgBox.setText("Möchtest du dieses Feld kaufen?");
@@ -259,4 +309,3 @@ void MainWindow::datenEmpfangen() {
 }
 
 void MainWindow::log(QString t) { ui->logAusgabe->append(t); }
-// *** ENDE KI-generiert Label: Prompt_27_Client_NoIcon_Ultimate_Fix ***
